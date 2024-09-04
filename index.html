@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Terraform Deployment</title>
+  </head>
+  <body>
+    <h1>Terraform Deployment Status</h1>
+
+    <!-- AWS Credentials Form -->
+    <div>
+      <h3>Configure AWS</h3>
+      <label for="accessKeyId">Access Key ID:</label>
+      <input type="text" id="accessKeyId" /><br />
+      <label for="secretAccessKey">Secret Access Key:</label>
+      <input type="text" id="secretAccessKey" /><br />
+      <label for="region">Region:</label>
+      <input type="text" id="region" /><br />
+      <label for="username">Username:</label>
+      <input type="text" id="username" /><br />
+      <button id="configureButton">Configure AWS</button>
+      <p id="configureStatus"></p>
+    </div>
+
+    <!-- Deployment Status -->
+    <div>
+      <h3>Deployment</h3>
+      <label
+        ><input type="checkbox" id="aws_validation" disabled /> AWS
+        Validation</label
+      ><br />
+      <label
+        ><input type="checkbox" id="terraform_init" disabled /> Terraform
+        Init</label
+      ><br />
+      <label><input type="checkbox" id="network" disabled /> Network</label
+      ><br />
+      <label><input type="checkbox" id="ecs" disabled /> ECS</label><br />
+      <label
+        ><input type="checkbox" id="autoscaling" disabled /> Autoscaling</label
+      ><br />
+      <label><input type="checkbox" id="route53" disabled /> Route 53</label
+      ><br />
+      <label
+        ><input type="checkbox" id="monitoring" disabled /> Monitoring</label
+      ><br />
+      <button id="startButton" disabled>Start Deployment</button>
+      <button id="destroyButton" disabled>Destroy Deployment</button>
+      <pre id="output"></pre>
+    </div>
+
+    <script>
+      const outputElement = document.getElementById("output");
+      const startButton = document.getElementById("startButton");
+      const destroyButton = document.getElementById("destroyButton");
+      const configureButton = document.getElementById("configureButton");
+
+      // Connect to the WebSocket server immediately on page load
+      const socket = new WebSocket("ws://18.235.175.234:6789");
+
+      socket.onopen = () => {
+        console.log("Connected to WebSocket server");
+      };
+
+      socket.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          console.log("Received message:", message); // Debugging line
+
+          if (message.step && message.status) {
+            const checkbox = document.getElementById(message.step);
+            if (checkbox) {
+              checkbox.disabled = false;
+              checkbox.checked = message.status.includes("successfully");
+            }
+
+            // Append the message to the output element
+            outputElement.innerText += `${message.step}: ${message.status}\n`;
+          } else {
+            console.warn(
+              "Received message does not contain step or status fields:",
+              message
+            );
+          }
+        } catch (error) {
+          console.error("Failed to parse WebSocket message:", error);
+        }
+      };
+
+      socket.onclose = () => {
+        console.log("WebSocket connection closed");
+      };
+
+      // Configure AWS and enable Start Deployment button if successful
+      configureButton.addEventListener("click", async () => {
+        const accessKeyId = document.getElementById("accessKeyId").value;
+        const secretAccessKey =
+          document.getElementById("secretAccessKey").value;
+        const region = document.getElementById("region").value;
+
+        try {
+          const response = await fetch(
+            "http://18.235.175.234:3000/configure-aws",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ accessKeyId, secretAccessKey, region }),
+            }
+          );
+
+          const result = await response.json();
+          outputElement.innerText = result.message;
+
+          if (result.success) {
+            // Enable the start and destroy buttons
+            startButton.disabled = false;
+            destroyButton.disabled = false;
+          }
+        } catch (error) {
+          console.error("Failed to configure AWS:", error);
+          outputElement.innerText = "Failed to configure AWS: " + error.message;
+        }
+      });
+
+      // Trigger the Terraform apply script on button click
+      startButton.addEventListener("click", () => {
+        const region = document.getElementById("region").value;
+        const username = document.getElementById("username").value;
+        socket.send(
+          JSON.stringify({
+            command: "start-terraform",
+            region: region,
+            username: username,
+          })
+        );
+      });
+
+      // Trigger the Terraform destroy script on button click
+      destroyButton.addEventListener("click", () => {
+        const region = document.getElementById("region").value;
+        const username = document.getElementById("username").value;
+        socket.send(
+          JSON.stringify({
+            command: "destroy-terraform",
+            region: region,
+            username: username,
+          })
+        );
+      });
+    </script>
+  </body>
+</html>
